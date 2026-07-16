@@ -11,11 +11,19 @@ SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- USER-ID ----
-# Wir nutzen die E-Mail als User-ID, falls Streamlit-Auth aktiv ist, 
-# sonst ein Fallback für lokale Tests
-user_info = st.context.user
-user_id = user_info.email if user_info.is_logged_in else "gast_user"
+# --- USER-ID ---
+# Wir versuchen, den User aus der Streamlit-Session zu holen.
+# Falls kein User eingeloggt ist, nutzen wir "gast_user".
+
+try:
+    # Versuche den Zugriff über das aktuelle Auth-System
+    user_info = st.context.user
+    user_id = user_info.email if user_info and hasattr(user_info, 'email') else "gast_user"
+except Exception:
+    # Fallback, falls st.context.user fehlschlägt
+    user_id = "gast_user"
+
+st.write(f"Eingeloggt als: {user_id}") # Nur zum Testen, kannst du später löschen
 
 # --- HELPER FUNKTIONEN ---
 def fetch_chefkoch_recipe(is_veg):

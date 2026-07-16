@@ -1,4 +1,10 @@
+<<<<<<< HEAD
 streamlit
 requests
 beautifulsoup4
+=======
+streamlit
+requests
+beautifulsoup4
+>>>>>>> 3d7e2ca973a22175ea5411f5f4e62683eafc6571
 supabase
