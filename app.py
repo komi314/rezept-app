@@ -11,7 +11,7 @@ SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- USER-ID ---
+# --- USER-ID ----
 # Wir versuchen, den User aus der Streamlit-Session zu holen.
 # Falls kein User eingeloggt ist, nutzen wir "gast_user".
 
