@@ -3,40 +3,35 @@ from supabase import create_client
 import requests
 from bs4 import BeautifulSoup
 import random
-import datetime
+import json # WICHTIG: Das hat gefehlt
 
-# --- DATENBANK VERBINDUNG ---
-# Holt die Daten aus den Secrets der Streamlit Cloud
+# --- KONFIGURATION ---
+# Stelle sicher, dass SUPABASE_URL und SUPABASE_KEY in deinen Streamlit Secrets hinterlegt sind
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- USER-ID ----
-# Wir versuchen, den User aus der Streamlit-Session zu holen.
-# Falls kein User eingeloggt ist, nutzen wir "gast_user".
-
+# --- USER-ID ---
 try:
-    # Versuche den Zugriff über das aktuelle Auth-System
     user_info = st.context.user
     user_id = user_info.email if user_info and hasattr(user_info, 'email') else "gast_user"
 except Exception:
-    # Fallback, falls st.context.user fehlschlägt
     user_id = "gast_user"
 
-st.write(f"Eingeloggt als: {user_id}") # Nur zum Testen, kannst du später löschen
+st.write(f"Eingeloggt als: {user_id}")
 
-# --- HELPER FUNKTIONEN ---
+# --- FUNKTIONEN ---
 def fetch_chefkoch_recipe(is_veg):
     search_term = "Rezept"
     search_url = f"https://www.chefkoch.de/rs/s0/{search_term}/Rezepte.html"
     headers = {'User-Agent': 'Mozilla/5.0'}
-    response = requests.get(search_url, headers=headers)
-    soup = BeautifulSoup(response.text, 'html.parser')
-    links = [a['href'] for a in soup.find_all('a', href=True) if '/rezepte/' in a['href']]
-    random.shuffle(links)
-    
-    for link in links[:5]:
-        try:
+    try:
+        response = requests.get(search_url, headers=headers)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        links = [a['href'] for a in soup.find_all('a', href=True) if '/rezepte/' in a['href']]
+        random.shuffle(links)
+        
+        for link in links[:5]:
             resp = requests.get(link, headers=headers)
             s = BeautifulSoup(resp.text, 'html.parser')
             script = s.find('script', {'type': 'application/ld+json'})
@@ -49,14 +44,15 @@ def fetch_chefkoch_recipe(is_veg):
                     if is_veg and any(k in name.lower() for k in ["huhn", "fleisch", "fisch", "speck"]):
                         continue
                     return {"name": name, "zutaten": recipe.get('recipeIngredient', []), "url": link}
-        except: continue
+    except Exception as e:
+        st.error(f"Fehler beim Laden: {e}")
     return None
 
 # --- APP UI ---
 st.title("👨‍🍳 Chefkoch Smart-App")
-veg_choice = st.radio("Ernährungsweise:", ["Vegetarisch", "Mit Fleisch"])
+veg_choice = st.radio("Ernährungsweise:", ["Vegetarisch", "Mit Fleisch"], key="veg_radio")
 
-if st.button("Neues Rezept suchen"):
+if st.button("Neues Rezept suchen", key="btn_suche"):
     st.session_state.current_recipe = fetch_chefkoch_recipe(veg_choice == "Vegetarisch")
 
 if 'current_recipe' in st.session_state and st.session_state.current_recipe:
@@ -67,8 +63,7 @@ if 'current_recipe' in st.session_state and st.session_state.current_recipe:
     
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("✅ Zutaten speichern"):
-            # Speichern in Supabase 'einkaufsliste'
+        if st.button("✅ Zutaten speichern", key="save_zutaten"):
             for zutat in r["zutaten"]:
                 supabase.table("einkaufsliste").insert({
                     "user_id": user_id,
@@ -78,8 +73,7 @@ if 'current_recipe' in st.session_state and st.session_state.current_recipe:
             st.success("Zutaten gespeichert!")
             
     with col2:
-        if st.button("❤️ Ich mag das!"):
-            # Speichern in Supabase 'favoriten'
+        if st.button("❤️ Ich mag das!", key="save_fav"):
             supabase.table("favoriten").insert({
                 "user_id": user_id,
                 "rezept_name": r["name"],
@@ -90,11 +84,9 @@ if 'current_recipe' in st.session_state and st.session_state.current_recipe:
 
 # --- SIDEBAR ---
 st.sidebar.title("🛒 Deine Einkaufsliste")
-# Abfrage aus Datenbank
 einkauf_data = supabase.table("einkaufsliste").select("*").eq("user_id", user_id).execute().data
 
 if einkauf_data:
-    # Gruppierung für die Ansicht
     grouped = {}
     for item in einkauf_data:
         grouped.setdefault(item['rezept_name'], []).append(item['zutat'])
@@ -104,7 +96,7 @@ if einkauf_data:
             for z in zutaten:
                 st.write(f"- {z}")
                 
-    if st.sidebar.button("Liste löschen"):
+    if st.sidebar.button("Liste löschen", key="clear_list"):
         supabase.table("einkaufsliste").delete().eq("user_id", user_id).execute()
         st.rerun()
 
@@ -115,6 +107,7 @@ fav_data = supabase.table("favoriten").select("*").eq("user_id", user_id).execut
 if fav_data:
     for fav in fav_data:
         st.sidebar.markdown(f"[{fav['rezept_name']}]({fav['url']})")
-        if st.sidebar.button(f"🗑️ Löschen", key=f"del_{fav['id']}"):
+        # WICHTIG: Eindeutiger Key durch ID des Favoriten
+        if st.sidebar.button(f"🗑️ Löschen {fav['rezept_name'][:10]}", key=f"del_{fav['id']}"):
             supabase.table("favoriten").delete().eq("id", fav['id']).execute()
             st.rerun()
