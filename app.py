@@ -40,6 +40,7 @@ def fetch_chefkoch_recipe(is_veg):
                     return {"name": name, "zutaten": recipe.get('recipeIngredient', []), "url": link}
     except Exception as e:
         st.error(f"Fehler beim Laden: {e}")
+        st.write(f"Fehler beim Laden: {e}")
     return None
 
 # --- APP UI ---
