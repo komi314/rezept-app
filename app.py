@@ -11,11 +11,10 @@ SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- USER-ID ---
-try:
-    user_info = st.context.user
-    user_id = user_info.email if user_info and hasattr(user_info, 'email') else "gast_user"
-except Exception:
-    user_id = "gast_user"
+# Da st.context.user in der kostenlosen Umgebung nicht verfügbar ist, nutzen wir einen festen Gast-User
+user_id = "gast_user"
+
+st.write(fEingeloggt als: {user_id}")
 
 st.write(f"Eingeloggt als: {user_id}")
 
