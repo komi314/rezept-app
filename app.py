@@ -14,8 +14,6 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # Da st.context.user in der kostenlosen Umgebung nicht verfügbar ist, nutzen wir einen festen Gast-User
 user_id = "gast_user"
 
-st.write(fEingeloggt als: {user_id}")
-
 st.write(f"Eingeloggt als: {user_id}")
 
 # --- FUNKTIONEN ---
