@@ -5,12 +5,10 @@ from bs4 import BeautifulSoup
 import random
 import json
 
-
-# --- KONFIGURATION ---
-# Stelle sicher, dass SUPABASE_URL und SUPABASE_KEY in deinen Streamlit Secrets hinterlegt sind
+# --- SUPABASE CLIENT & KONFIGURATION ---
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- USER-ID ---
 try:
@@ -108,7 +106,6 @@ fav_data = supabase.table("favoriten").select("*").eq("user_id", user_id).execut
 if fav_data:
     for fav in fav_data:
         st.sidebar.markdown(f"[{fav['rezept_name']}]({fav['url']})")
-        # WICHTIG: Eindeutiger Key durch ID des Favoriten
         if st.sidebar.button(f"🗑️ Löschen {fav['rezept_name'][:10]}", key=f"del_{fav['id']}"):
             supabase.table("favoriten").delete().eq("id", fav['id']).execute()
             st.rerun()
