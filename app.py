@@ -24,6 +24,7 @@ def fetch_chefkoch_recipe(is_veg):
         st.write(f"Chefkoch Status-Code: {response.status_code}")
         soup = BeautifulSoup(response.text, 'html.parser')
         links = [a['href'] for a in soup.find_all('a', href=True) if '/rezepte/' in a['href']]
+        st.write(f"Gefundene Rezept-Links: {len(links)}")
         random.shuffle(links)
         
         for link in links[:5]:
