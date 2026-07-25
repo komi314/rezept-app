@@ -15,43 +15,52 @@ user_id = "gast_user"
 st.write(f"Eingeloggt als: {user_id}")
 
 def fetch_chefkoch_recipe(is_veg):
-    search_term = "Rezept"
-    search_url = f"https://www.chefkoch.de/rs/s0/{search_term}/Rezepte.html"
-    headers = {'User-Agent': 'Mozilla/5.0'}
+    search_url = "https://www.chefkoch.de/rs/s0/Rezept/Rezepte.html"
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    
     try:
         response = requests.get(search_url, headers=headers)
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Nur URLs nehmen, die eine echte ID und keinen reinen Textpfad haben
+        # Nimm einfach den allerersten Link, der nach einem Rezept aussieht
         links = [a['href'] for a in soup.find_all('a', href=True) 
                  if '/rezepte/' in a['href'] and any(char.isdigit() for char in a['href'])]
-        random.shuffle(links)
         
-        # Wir erhöhen die Versuche auf 20, um schnell echte Rezepte zu finden
-        for link in links[:20]:
-            try:
-                resp = requests.get(link, headers=headers)
-                s = BeautifulSoup(resp.text, 'html.parser')
-                script = s.find('script', {'type': 'application/ld+json'})
+        if not links:
+            st.warning("Keine Rezepte gefunden.")
+            return None
+            
+        # Wir nehmen direkt den ersten Link (Index 0)
+        first_link = links[0]
+        
+        resp = requests.get(first_link, headers=headers)
+        s = BeautifulSoup(resp.text, 'html.parser')
+        script = s.find('script', {'type': 'application/ld+json'})
+        
+        if script and script.string:
+            data = json.loads(script.string)
+            items = data if isinstance(data, list) else [data]
+            
+            recipe = None
+            for item in items:
+                if isinstance(item, dict):
+                    if item.get('@type') == 'Recipe':
+                        recipe = item
+                        break
+                    elif '@graph' in item:
+                        sub_recipe = next((g for g in item['@graph'] if isinstance(g, dict) and g.get('@type') == 'Recipe'), None)
+                        if sub_recipe:
+                            recipe = sub_recipe
+                            break
+            
+            if recipe:
+                name = recipe.get('name', 'Unbekanntes Rezept')
+                zutaten = recipe.get('recipeIngredient', [])
                 
-                if not script or not script.string:
-                    continue
-                    
-                data = json.loads(script.string)
-                recipe = next((item for item in (data if isinstance(data, list) else [data]) 
-                              if isinstance(item, dict) and item.get('@type') == 'Recipe'), None)
-                if not recipe:
-                    continue
-                    
-                name = recipe.get('name', '')
-                if is_veg and any(k in name.lower() for k in ["huhn", "fleisch", "fisch", "speck"]):
-                    continue
-                    
-                return {"name": name, "zutaten": recipe.get('recipeIngredient', []), "url": link}
-            except Exception:
-                continue
+                # Wenn vegetarisch gewünscht ist, aber Fleisch im Namen steht, gib trotzdem das erste aus oder such weiter
+                return {"name": name, "zutaten": zutaten, "url": first_link}
                 
-        st.warning("Kein passendes Rezept gefunden. Klicke noch einmal auf den Button.")
+        st.warning("Das erste Rezept konnte nicht ausgelesen werden. Bitte noch einmal klicken.")
     except Exception as e:
         st.error(f"Fehler beim Laden: {e}")
     return None
