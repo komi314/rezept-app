@@ -11,9 +11,7 @@ SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- USER-ID ---
-# Da st.context.user in der kostenlosen Umgebung nicht verfügbar ist, nutzen wir einen festen Gast-User
 user_id = "gast_user"
-
 st.write(f"Eingeloggt als: {user_id}")
 
 # --- FUNKTIONEN ---
