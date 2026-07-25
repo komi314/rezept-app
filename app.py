@@ -1,14 +1,10 @@
 import streamlit as st
-from supabase import create_client
+from supabase import create_client, Client
 import requests
 from bs4 import BeautifulSoup
 import random
 import json
 
-#--- SUPABASE CLIENT ---
-url: str = st.secrets["SUPABASE_URL"]
-key: str = st.secrets["SUPABASE_KEY"]
-supabase: Client = create_client(url, key)
 
 # --- KONFIGURATION ---
 # Stelle sicher, dass SUPABASE_URL und SUPABASE_KEY in deinen Streamlit Secrets hinterlegt sind
