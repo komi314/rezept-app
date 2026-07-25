@@ -14,32 +14,43 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 user_id = "gast_user"
 st.write(f"Eingeloggt als: {user_id}")
 
-# --- FUNKTIONEN ---
 def fetch_chefkoch_recipe(is_veg):
     search_term = "Rezept"
     search_url = f"https://www.chefkoch.de/rs/s0/{search_term}/Rezepte.html"
     headers = {'User-Agent': 'Mozilla/5.0'}
     try:
         response = requests.get(search_url, headers=headers)
-        st.write(f"Chefkoch Status-Code: {response.status_code}")
         soup = BeautifulSoup(response.text, 'html.parser')
         links = [a['href'] for a in soup.find_all('a', href=True) if '/rezepte/' in a['href']]
-        st.write(f"Gefundene Rezept-Links: {len(links)}")
         random.shuffle(links)
         
         for link in links[:5]:
             resp = requests.get(link, headers=headers)
             s = BeautifulSoup(resp.text, 'html.parser')
             script = s.find('script', {'type': 'application/ld+json'})
-            if script:
+            
+            if not script:
+                st.write(f"Übersprungen (kein JSON-LD): {link}")
+                continue
+                
+            try:
                 data = json.loads(script.string)
                 recipe = next((item for item in (data if isinstance(data, list) else [data]) 
                               if item.get('@type') == 'Recipe'), None)
-                if recipe:
-                    name = recipe.get('name', '')
-                    if is_veg and any(k in name.lower() for k in ["huhn", "fleisch", "fisch", "speck"]):
-                        continue
-                    return {"name": name, "zutaten": recipe.get('recipeIngredient', []), "url": link}
+                if not recipe:
+                    st.write(f"Übersprungen (kein 'Recipe'-Typ im JSON): {link}")
+                    continue
+                    
+                name = recipe.get('name', '')
+                if is_veg and any(k in name.lower() for k in ["huhn", "fleisch", "fisch", "speck"]):
+                    st.write(f"Übersprungen (nicht vegetarisch): {name}")
+                    continue
+                    
+                return {"name": name, "zutaten": recipe.get('recipeIngredient', []), "url": link}
+            except Exception as json_err:
+                st.write(f"JSON-Fehler bei {link}: {json_err}")
+                
+        st.warning("Kein passendes Rezept nach 5 Versuchen gefunden. Probier es noch einmal mit dem Button.")
     except Exception as e:
         st.error(f"Fehler beim Laden: {e}")
     return None
