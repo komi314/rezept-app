@@ -21,6 +21,7 @@ def fetch_chefkoch_recipe(is_veg):
     headers = {'User-Agent': 'Mozilla/5.0'}
     try:
         response = requests.get(search_url, headers=headers)
+        st.write(f"Chefkoch Status-Code: {response.status_code}")
         soup = BeautifulSoup(response.text, 'html.parser')
         links = [a['href'] for a in soup.find_all('a', href=True) if '/rezepte/' in a['href']]
         random.shuffle(links)
@@ -40,7 +41,6 @@ def fetch_chefkoch_recipe(is_veg):
                     return {"name": name, "zutaten": recipe.get('recipeIngredient', []), "url": link}
     except Exception as e:
         st.error(f"Fehler beim Laden: {e}")
-        st.write(f"Fehler beim Laden: {e}")
     return None
 
 # --- APP UI ---
