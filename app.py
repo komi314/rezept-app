@@ -21,36 +21,37 @@ def fetch_chefkoch_recipe(is_veg):
     try:
         response = requests.get(search_url, headers=headers)
         soup = BeautifulSoup(response.text, 'html.parser')
-        links = [a['href'] for a in soup.find_all('a', href=True) if '/rezepte/' in a['href']]
+        
+        # Nur URLs nehmen, die eine echte ID und keinen reinen Textpfad haben
+        links = [a['href'] for a in soup.find_all('a', href=True) 
+                 if '/rezepte/' in a['href'] and any(char.isdigit() for char in a['href'])]
         random.shuffle(links)
         
-        for link in links[:5]:
-            resp = requests.get(link, headers=headers)
-            s = BeautifulSoup(resp.text, 'html.parser')
-            script = s.find('script', {'type': 'application/ld+json'})
-            
-            if not script:
-                st.write(f"Übersprungen (kein JSON-LD): {link}")
-                continue
-                
+        # Wir erhöhen die Versuche auf 20, um schnell echte Rezepte zu finden
+        for link in links[:20]:
             try:
+                resp = requests.get(link, headers=headers)
+                s = BeautifulSoup(resp.text, 'html.parser')
+                script = s.find('script', {'type': 'application/ld+json'})
+                
+                if not script or not script.string:
+                    continue
+                    
                 data = json.loads(script.string)
                 recipe = next((item for item in (data if isinstance(data, list) else [data]) 
-                              if item.get('@type') == 'Recipe'), None)
+                              if isinstance(item, dict) and item.get('@type') == 'Recipe'), None)
                 if not recipe:
-                    st.write(f"Übersprungen (kein 'Recipe'-Typ im JSON): {link}")
                     continue
                     
                 name = recipe.get('name', '')
                 if is_veg and any(k in name.lower() for k in ["huhn", "fleisch", "fisch", "speck"]):
-                    st.write(f"Übersprungen (nicht vegetarisch): {name}")
                     continue
                     
                 return {"name": name, "zutaten": recipe.get('recipeIngredient', []), "url": link}
-            except Exception as json_err:
-                st.write(f"JSON-Fehler bei {link}: {json_err}")
+            except Exception:
+                continue
                 
-        st.warning("Kein passendes Rezept nach 5 Versuchen gefunden. Probier es noch einmal mit dem Button.")
+        st.warning("Kein passendes Rezept gefunden. Klicke noch einmal auf den Button.")
     except Exception as e:
         st.error(f"Fehler beim Laden: {e}")
     return None
