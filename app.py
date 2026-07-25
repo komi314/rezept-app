@@ -22,11 +22,13 @@ def fetch_chefkoch_recipe(is_veg):
         response = requests.get(search_url, headers=headers)
         soup = BeautifulSoup(response.text, 'html.parser')
         
+        # Alle gültigen Rezept-Links einsammeln und durchmischen (für jedes Mal ein neues Rezept)
         links = [a['href'] for a in soup.find_all('a', href=True) 
                  if '/rezepte/' in a['href'] and any(char.isdigit() for char in a['href'])]
+        random.shuffle(links)
         
-        # Wir prüfen die ersten 5 Links und nehmen sofort den ersten, der funktioniert
-        for link in links[:5]:
+        # Wir prüfen die gemischten Links, bis das erste passende gefunden wird
+        for link in links:
             try:
                 resp = requests.get(link, headers=headers)
                 s = BeautifulSoup(resp.text, 'html.parser')
@@ -53,12 +55,21 @@ def fetch_chefkoch_recipe(is_veg):
                 if recipe:
                     name = recipe.get('name', '')
                     zutaten = recipe.get('recipeIngredient', [])
-                    if name and zutaten:
-                        return {"name": name, "zutaten": zutaten, "url": link}
+                    
+                    if not name or not zutaten:
+                        continue
+                        
+                    # Strenger Check für vegetarisch
+                    if is_veg:
+                        fleisch_woerter = ["fleisch", "huhn", "hähnchen", "schwein", "rind", "fisch", "speck", "schinken", "wurst", "hackfleisch", "pute", "kalb", "lachs", "thunfisch"]
+                        if any(wort in name.lower() for wort in fleisch_woerter):
+                            continue # Überspringen, wenn Fleisch/Fisch im Namen ist
+                            
+                    return {"name": name, "zutaten": zutaten, "url": link}
             except Exception:
                 continue
                 
-        st.warning("Konnte auf Anhieb kein Rezept finden. Bitte noch einmal klicken.")
+        st.warning("Kein passendes Rezept gefunden. Bitte noch einmal klicken.")
     except Exception as e:
         st.error(f"Fehler beim Laden: {e}")
     return None
