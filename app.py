@@ -1,7 +1,7 @@
 import streamlit as st
 from supabase import create_client, Client
 import requests
-from bs4 import BeautifulSoup
+from bs4:: BeautifulSoup
 import random
 import json
 
@@ -14,6 +14,10 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 user_id = "gast_user"
 st.write(f"Eingeloggt als: {user_id}")
 
+# Verlauf der bereits gesehenen URLs initialisieren, damit nichts doppelt kommt
+if 'seen_recipes' not in st.session_state:
+    st.session_state.seen_recipes = set()
+
 def fetch_chefkoch_recipe(is_veg):
     search_url = "https://www.chefkoch.de/rs/s0/Rezept/Rezepte.html"
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
@@ -22,13 +26,16 @@ def fetch_chefkoch_recipe(is_veg):
         response = requests.get(search_url, headers=headers)
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Alle gültigen Rezept-Links einsammeln und durchmischen (für jedes Mal ein neues Rezept)
+        # Alle gültigen Rezept-Links einsammeln und durchmischen
         links = [a['href'] for a in soup.find_all('a', href=True) 
                  if '/rezepte/' in a['href'] and any(char.isdigit() for char in a['href'])]
         random.shuffle(links)
         
-        # Wir prüfen die gemischten Links, bis das erste passende gefunden wird
+        # Wir prüfen die gemischten Links und filtern bereits gesehene heraus
         for link in links:
+            if link in st.session_state.seen_recipes:
+                continue # Schon gehabt, überspringen
+                
             try:
                 resp = requests.get(link, headers=headers)
                 s = BeautifulSoup(resp.text, 'html.parser')
@@ -63,13 +70,15 @@ def fetch_chefkoch_recipe(is_veg):
                     if is_veg:
                         fleisch_woerter = ["fleisch", "huhn", "hähnchen", "schwein", "rind", "fisch", "speck", "schinken", "wurst", "hackfleisch", "pute", "kalb", "lachs", "thunfisch"]
                         if any(wort in name.lower() for wort in fleisch_woerter):
-                            continue # Überspringen, wenn Fleisch/Fisch im Namen ist
+                            continue 
                             
+                    # Wenn es durchkommt, merken wir es uns in der Session
+                    st.session_state.seen_recipes.add(link)
                     return {"name": name, "zutaten": zutaten, "url": link}
             except Exception:
                 continue
                 
-        st.warning("Kein passendes Rezept gefunden. Bitte noch einmal klicken.")
+        st.warning("Keine neuen Rezepte mehr gefunden. Bitte versuche es später noch einmal.")
     except Exception as e:
         st.error(f"Fehler beim Laden: {e}")
     return None
