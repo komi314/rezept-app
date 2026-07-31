@@ -1,7 +1,7 @@
 import streamlit as st
 from supabase import create_client, Client
 import requests
-from bs4:: BeautifulSoup
+from bs4 import BeautifulSoup
 import random
 import json
 
