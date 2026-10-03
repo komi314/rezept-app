@@ -1,6 +1,6 @@
 import streamlit as st
 from supabase import create_client, Client
-import requests
+import feedparser
 import random
 import json
 
@@ -18,73 +18,48 @@ if 'seen_recipes' not in st.session_state:
     st.session_state.seen_recipes = set()
 
 def fetch_chefkoch_recipe(is_veg):
-    # Nutzen wir die offizielle JSON-API-Suche von Chefkoch, die extrem zuverlässig ist
-    # Wir suchen nach einem allgemeinen Begriff oder variieren ihn leicht
-    suchbegriffe = ["schnell", "einfach", "leckere", "gesund", "pasta", "pfanne", "kartoffel", "gemüse"]
-    query = random.choice(suchbegriffe)
-    if is_veg:
-        query += " vegetarisch"
-        
-    api_url = f"https://api.chefkoch.de/v2/recipes?query={query}&limit=30"
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json'
-    }
+    # Wir nutzen verschiedene offizielle RSS-Feeds von Chefkoch (die blockieren nicht)
+    rss_urls = [
+        "https://www.chefkoch.de/rs/s0t0/rezepte.rss",
+        "https://www.chefkoch.de/rs/s0t8/rezepte.rss", # Schnell
+        "https://www.chefkoch.de/rs/s0t3/rezepte.rss"  # Einfach
+    ]
+    
+    feed_url = random.choice(rss_urls)
     
     try:
-        response = requests.get(api_url, headers=headers)
-        if response.status_code != 200:
-            st.warning(f"Chefkoch API hat Code {response.status_code} geliefert.")
+        feed = feedparser.parse(feed_url)
+        entries = feed.entries
+        
+        if not entries:
+            st.warning("Der Rezept-Feed konnte momentan nicht geladen werden.")
             return None
             
-        data = response.json()
-        results = data.get("results", [])
+        random.shuffle(entries)
         
-        # Durchmischen, damit es jedes Mal andere Rezepte gibt
-        random.shuffle(results)
-        
-        for item in results:
-            recipe_meta = item.get("recipe", {})
-            recipe_id = recipe_meta.get("id")
-            name = recipe_meta.get("title")
-            url = recipe_meta.get("siteUrl")
+        for entry in entries:
+            url = entry.link
+            name = entry.title
             
-            if not recipe_id or not url or url in st.session_state.seen_recipes:
+            if not url or not name or url in st.session_state.seen_recipes:
                 continue
                 
-            # Detaillierte Rezept-Infos abrufen (für die Zutaten)
-            detail_url = f"https://api.chefkoch.de/v2/recipes/{recipe_id}"
-            detail_resp = requests.get(detail_url, headers=headers)
-            
-            if detail_resp.status_code != 200:
-                continue
-                
-            detail_data = detail_resp.json()
-            ingredients_groups = detail_data.get("ingredients", [])
-            
-            zutaten = []
-            for group in ingredients_groups:
-                for ing in group.get("ingredients", []):
-                    # Text-Repräsentation der Zutat zusammenbauen (Menge + Einheit + Name)
-                    amount = ing.get("amount", "")
-                    unit = ing.get("unit", "")
-                    iname = ing.get("name", "")
-                    zutaten.append(f"{amount} {unit} {iname}".strip())
-                    
-            if not name or not zutaten:
-                continue
-                
-            # Strenger Check für vegetarisch (falls API trotz Filter Fleisch liefert)
+            # Strenger Check für vegetarisch basierend auf dem Titel
             if is_veg:
                 fleisch_woerter = ["fleisch", "huhn", "hähnchen", "schwein", "rind", "fisch", "speck", "schinken", "wurst", "hackfleisch", "pute", "kalb", "lachs", "thunfisch"]
                 if any(wort in name.lower() for wort in fleisch_woerter):
                     continue
             
-            # Erfolgreich gefunden -> in Session speichern
+            # Da RSS-Feeds keine detaillierte Zutatenliste im Text haben, 
+            # nutzen wir die Beschreibung oder holen uns einen Platzhalter, 
+            # alternativ parsen wir den RSS-Summary-Text falls vorhanden.
+            zutaten_text = entry.get("summary", "Zutaten im Originalrezept einsehbar")
+            zutaten = [zutaten_text]
+            
             st.session_state.seen_recipes.add(url)
             return {"name": name, "zutaten": zutaten, "url": url}
             
-        st.warning("Keine neuen Rezepte gefunden. Bitte versuche es noch einmal.")
+        st.warning("Keine neuen Rezepte im Feed gefunden. Bitte versuche es noch einmal.")
     except Exception as e:
         st.error(f"Fehler beim Laden: {e}")
     return None
@@ -99,7 +74,7 @@ if st.button("Neues Rezept suchen", key="btn_suche"):
 if 'current_recipe' in st.session_state and st.session_state.current_recipe:
     r = st.session_state.current_recipe
     st.subheader(r["name"])
-    st.write("Zutaten:", r["zutaten"])
+    st.write("Zutaten-Hinweis:", r["zutaten"][0])
     st.link_button("Zum Originalrezept", r["url"])
     
     col1, col2 = st.columns(2)
@@ -111,7 +86,7 @@ if 'current_recipe' in st.session_state and st.session_state.current_recipe:
                     "rezept_name": r["name"],
                     "zutat": zutat
                 }).execute()
-            st.success("Zutaten gespeichert!")
+            st.success("Gespeichert!")
             
     with col2:
         if st.button("❤️ Ich mag das!", key="save_fav"):
