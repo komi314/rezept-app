@@ -1,7 +1,6 @@
 import streamlit as st
 from supabase import create_client, Client
 import requests
-from bs4 import BeautifulSoup
 import random
 import json
 
@@ -14,71 +13,78 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 user_id = "gast_user"
 st.write(f"Eingeloggt als: {user_id}")
 
-# Verlauf der bereits gesehenen URLs initialisieren, damit nichts doppelt kommt
+# Verlauf der bereits gesehenen URLs initialisieren
 if 'seen_recipes' not in st.session_state:
     st.session_state.seen_recipes = set()
 
 def fetch_chefkoch_recipe(is_veg):
-    search_url = "https://www.chefkoch.de/rs/s0/Rezept/Rezepte.html"
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    # Nutzen wir die offizielle JSON-API-Suche von Chefkoch, die extrem zuverlässig ist
+    # Wir suchen nach einem allgemeinen Begriff oder variieren ihn leicht
+    suchbegriffe = ["schnell", "einfach", "leckere", "gesund", "pasta", "pfanne", "kartoffel", "gemüse"]
+    query = random.choice(suchbegriffe)
+    if is_veg:
+        query += " vegetarisch"
+        
+    api_url = f"https://api.chefkoch.de/v2/recipes?query={query}&limit=30"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json'
+    }
     
     try:
-        response = requests.get(search_url, headers=headers)
-        soup = BeautifulSoup(response.text, 'html.parser')
+        response = requests.get(api_url, headers=headers)
+        if response.status_code != 200:
+            st.warning(f"Chefkoch API hat Code {response.status_code} geliefert.")
+            return None
+            
+        data = response.json()
+        results = data.get("results", [])
         
-        # Alle gültigen Rezept-Links einsammeln und durchmischen
-        links = [a['href'] for a in soup.find_all('a', href=True) 
-                 if '/rezepte/' in a['href'] and any(char.isdigit() for char in a['href'])]
-        random.shuffle(links)
+        # Durchmischen, damit es jedes Mal andere Rezepte gibt
+        random.shuffle(results)
         
-        # Wir prüfen die gemischten Links und filtern bereits gesehene heraus
-        for link in links:
-            if link in st.session_state.seen_recipes:
-                continue # Schon gehabt, überspringen
-                
-            try:
-                resp = requests.get(link, headers=headers)
-                s = BeautifulSoup(resp.text, 'html.parser')
-                script = s.find('script', {'type': 'application/ld+json'})
-                
-                if not script or not script.string:
-                    continue
-                    
-                data = json.loads(script.string)
-                items = data if isinstance(data, list) else [data]
-                
-                recipe = None
-                for item in items:
-                    if isinstance(item, dict):
-                        if item.get('@type') == 'Recipe':
-                            recipe = item
-                            break
-                        elif '@graph' in item:
-                            sub_recipe = next((g for g in item['@graph'] if isinstance(g, dict) and g.get('@type') == 'Recipe'), None)
-                            if sub_recipe:
-                                recipe = sub_recipe
-                                break
-                
-                if recipe:
-                    name = recipe.get('name', '')
-                    zutaten = recipe.get('recipeIngredient', [])
-                    
-                    if not name or not zutaten:
-                        continue
-                        
-                    # Strenger Check für vegetarisch
-                    if is_veg:
-                        fleisch_woerter = ["fleisch", "huhn", "hähnchen", "schwein", "rind", "fisch", "speck", "schinken", "wurst", "hackfleisch", "pute", "kalb", "lachs", "thunfisch"]
-                        if any(wort in name.lower() for wort in fleisch_woerter):
-                            continue 
-                            
-                    # Wenn es durchkommt, merken wir es uns in der Session
-                    st.session_state.seen_recipes.add(link)
-                    return {"name": name, "zutaten": zutaten, "url": link}
-            except Exception:
+        for item in results:
+            recipe_meta = item.get("recipe", {})
+            recipe_id = recipe_meta.get("id")
+            name = recipe_meta.get("title")
+            url = recipe_meta.get("siteUrl")
+            
+            if not recipe_id or not url or url in st.session_state.seen_recipes:
                 continue
                 
-        st.warning("Keine neuen Rezepte mehr gefunden. Bitte versuche es später noch einmal.")
+            # Detaillierte Rezept-Infos abrufen (für die Zutaten)
+            detail_url = f"https://api.chefkoch.de/v2/recipes/{recipe_id}"
+            detail_resp = requests.get(detail_url, headers=headers)
+            
+            if detail_resp.status_code != 200:
+                continue
+                
+            detail_data = detail_resp.json()
+            ingredients_groups = detail_data.get("ingredients", [])
+            
+            zutaten = []
+            for group in ingredients_groups:
+                for ing in group.get("ingredients", []):
+                    # Text-Repräsentation der Zutat zusammenbauen (Menge + Einheit + Name)
+                    amount = ing.get("amount", "")
+                    unit = ing.get("unit", "")
+                    iname = ing.get("name", "")
+                    zutaten.append(f"{amount} {unit} {iname}".strip())
+                    
+            if not name or not zutaten:
+                continue
+                
+            # Strenger Check für vegetarisch (falls API trotz Filter Fleisch liefert)
+            if is_veg:
+                fleisch_woerter = ["fleisch", "huhn", "hähnchen", "schwein", "rind", "fisch", "speck", "schinken", "wurst", "hackfleisch", "pute", "kalb", "lachs", "thunfisch"]
+                if any(wort in name.lower() for wort in fleisch_woerter):
+                    continue
+            
+            # Erfolgreich gefunden -> in Session speichern
+            st.session_state.seen_recipes.add(url)
+            return {"name": name, "zutaten": zutaten, "url": url}
+            
+        st.warning("Keine neuen Rezepte gefunden. Bitte versuche es noch einmal.")
     except Exception as e:
         st.error(f"Fehler beim Laden: {e}")
     return None
