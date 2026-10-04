@@ -1,3 +1,4 @@
 streamlit
 supabase
 beautifulsoup4
+feedparser
