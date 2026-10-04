@@ -1,8 +1,6 @@
 import streamlit as st
 from supabase import create_client, Client
-import feedparser
-import random
-import json
+import requests
 
 # --- SUPABASE CLIENT & KONFIGURATION ---
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -13,69 +11,65 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 user_id = "gast_user"
 st.write(f"Eingeloggt als: {user_id}")
 
-# Verlauf der bereits gesehenen URLs initialisieren
+# Verlauf initialisieren
 if 'seen_recipes' not in st.session_state:
     st.session_state.seen_recipes = set()
 
-def fetch_chefkoch_recipe(is_veg):
-    # Wir nutzen verschiedene offizielle RSS-Feeds von Chefkoch (die blockieren nicht)
-    rss_urls = [
-        "https://www.chefkoch.de/rs/s0t0/rezepte.rss",
-        "https://www.chefkoch.de/rs/s0t8/rezepte.rss", # Schnell
-        "https://www.chefkoch.de/rs/s0t3/rezepte.rss"  # Einfach
-    ]
-    
-    feed_url = random.choice(rss_urls)
+def fetch_random_mealdb_recipe(is_veg):
+    # Wir rufen die offizielle, ungesperrte Zufalls-API von TheMealDB auf
+    url = "https://www.themealdb.com/api/json/v1/1/random.php"
     
     try:
-        feed = feedparser.parse(feed_url)
-        entries = feed.entries
-        
-        if not entries:
-            st.warning("Der Rezept-Feed konnte momentan nicht geladen werden.")
-            return None
-            
-        random.shuffle(entries)
-        
-        for entry in entries:
-            url = entry.link
-            name = entry.title
-            
-            if not url or not name or url in st.session_state.seen_recipes:
+        # Bis zu 5 Versuche, falls ein vegetarischer Filter aktiv ist und zufällig Fleisch kommt
+        for _ in range(5):
+            response = requests.get(url)
+            if response.status_code != 200:
                 continue
                 
-            # Strenger Check für vegetarisch basierend auf dem Titel
-            if is_veg:
-                fleisch_woerter = ["fleisch", "huhn", "hähnchen", "schwein", "rind", "fisch", "speck", "schinken", "wurst", "hackfleisch", "pute", "kalb", "lachs", "thunfisch"]
-                if any(wort in name.lower() for wort in fleisch_woerter):
-                    continue
+            data = response.json()
+            meal = data.get("meals", [{}])[0]
             
-            # Da RSS-Feeds keine detaillierte Zutatenliste im Text haben, 
-            # nutzen wir die Beschreibung oder holen uns einen Platzhalter, 
-            # alternativ parsen wir den RSS-Summary-Text falls vorhanden.
-            zutaten_text = entry.get("summary", "Zutaten im Originalrezept einsehbar")
-            zutaten = [zutaten_text]
+            name = meal.get("strMeal")
+            source_url = meal.get("strSource") or "https://www.themealdb.com"
+            category = meal.get("strCategory", "")
             
-            st.session_state.seen_recipes.add(url)
-            return {"name": name, "zutaten": zutaten, "url": url}
+            if not name or name in st.session_state.seen_recipes:
+                continue
+                
+            # Vegetarisch-Check über die Kategorie oder den Namen
+            if is_veg and category.lower() in ["beef", "chicken", "pork", "goat", "lamb"]:
+                continue
+                
+            # Zutaten und Mengen sauber aus den 20 möglichen Feldern der API extrahieren
+            zutaten = []
+            for i in range(1, 21):
+                ingredient = meal.get(f"strIngredient{i}")
+                measure = meal.get(f"strMeasure{i}")
+                
+                if ingredient and ingredient.strip():
+                    zutat_str = f"{measure.strip()} {ingredient.strip()}" if measure else ingredient.strip()
+                    zutaten.append(zutat_str)
+                    
+            st.session_state.seen_recipes.add(name)
+            return {"name": name, "zutaten": zutaten, "url": source_url}
             
-        st.warning("Keine neuen Rezepte im Feed gefunden. Bitte versuche es noch einmal.")
+        st.warning("Konnte kein passendes Rezept finden.")
     except Exception as e:
         st.error(f"Fehler beim Laden: {e}")
     return None
 
 # --- APP UI ---
-st.title("👨‍🍳 Chefkoch Smart-App")
+st.title("👨‍🍳 Smart Recipe App (Random)")
 veg_choice = st.radio("Ernährungsweise:", ["Vegetarisch", "Mit Fleisch"], key="veg_radio")
 
-if st.button("Neues Rezept suchen", key="btn_suche"):
-    st.session_state.current_recipe = fetch_chefkoch_recipe(veg_choice == "Vegetarisch")
+if st.button("Neues Zufalls-Rezept suchen", key="btn_suche"):
+    st.session_state.current_recipe = fetch_random_mealdb_recipe(veg_choice == "Vegetarisch")
 
 if 'current_recipe' in st.session_state and st.session_state.current_recipe:
     r = st.session_state.current_recipe
     st.subheader(r["name"])
-    st.write("Zutaten-Hinweis:", r["zutaten"][0])
-    st.link_button("Zum Originalrezept", r["url"])
+    st.write("Zutaten:", r["zutaten"])
+    st.link_button("Zum Rezept", r["url"])
     
     col1, col2 = st.columns(2)
     with col1:
@@ -86,7 +80,7 @@ if 'current_recipe' in st.session_state and st.session_state.current_recipe:
                     "rezept_name": r["name"],
                     "zutat": zutat
                 }).execute()
-            st.success("Gespeichert!")
+            st.success("Zutaten gespeichert!")
             
     with col2:
         if st.button("❤️ Ich mag das!", key="save_fav"):
@@ -98,7 +92,7 @@ if 'current_recipe' in st.session_state and st.session_state.current_recipe:
             }).execute()
             st.success("Gespeichert!")
 
-# --- SIDEBAR ---
+# --- SIDEBAR (Einkaufsliste & Favoriten unverändert) ---
 st.sidebar.title("🛒 Deine Einkaufsliste")
 einkauf_data = supabase.table("einkaufsliste").select("*").eq("user_id", user_id).execute().data
 
