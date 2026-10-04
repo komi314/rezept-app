@@ -7,9 +7,51 @@ SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- USER-ID ---
-user_id = "gast_user"
-st.write(f"Eingeloggt als: {user_id}")
+# --- AUTHENTIFIZIERUNGS-BEREICH (LOGIN / REGISTRIERUNG) ---
+if "user" not in st.session_state:
+    st.session_state.user = None
+
+if not st.session_state.user:
+    st.title("👨‍🍳 Smart Recipe App - Login")
+    tab1, tab2 = st.tabs(["Einloggen", "Registrieren"])
+    
+    with tab1:
+        st.subheader("Anmelden")
+        login_email = st.text_input("E-Mail", key="login_email")
+        login_password = st.text_input("Passwort", type="password", key="login_pass")
+        if st.button("Einloggen", key="btn_login"):
+            try:
+                res = supabase.auth.sign_in_with_password({"email": login_email, "password": login_password})
+                st.session_state.user = res.user
+                st.success("Erfolgreich eingeloggt!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Fehler beim Login: {e}")
+                
+    with tab2:
+        st.subheader("Neuen Account erstellen")
+        reg_email = st.text_input("E-Mail", key="reg_email")
+        reg_password = st.text_input("Passwort", type="password", key="reg_pass")
+        if st.button("Registrieren", key="btn_reg"):
+            try:
+                res = supabase.auth.sign_up({"email": reg_email, "password": reg_password})
+                st.success("Registrierung erfolgreich! Du kannst dich jetzt einloggen.")
+            except Exception as e:
+                st.error(f"Fehler bei der Registrierung: {e}")
+                
+    st.stop("Bitte logge dich ein, um die App zu nutzen.")
+
+# Wenn eingeloggt, holen wir die echte User-ID von Supabase
+user_id = st.session_state.user.id
+
+# Logout-Button in der Sidebar
+if st.sidebar.button("🚪 Abmelden"):
+    supabase.auth.sign_out()
+    st.session_state.user = None
+    st.rerun()
+
+# --- HAUPTAPP (FÜR EINGELOGGTE NUTZER) ---
+st.write(f"Eingeloggt als: {st.session_state.user.email}")
 
 # Verlauf initialisieren
 if 'seen_recipes' not in st.session_state:
@@ -81,17 +123,16 @@ if 'current_recipe' in st.session_state and st.session_state.current_recipe:
             
     with col2:
         if st.button("❤️ Ich mag das!", key="save_fav"):
-            # Wichtig: Wir speichern jetzt direkt auch die Zutaten im JSON-Format in der Favoriten-Tabelle
             supabase.table("favoriten").insert({
                 "user_id": user_id,
                 "rezept_name": r["name"],
                 "url": r["url"],
-                "zutaten": r["zutaten"] # Falls die Spalte in Supabase als JSON oder Text existiert
+                "zutaten": r["zutaten"]
             }).execute()
             st.success("Zu Favoriten hinzugefügt!")
             st.rerun()
 
-# --- SIDEBAR: EINKAUFSLISTE ---
+# --- SIDEBAR: EINKAUFSLISTE (Gefiltert nach eingeloggten User) ---
 st.sidebar.title("🛒 Deine Einkaufsliste")
 einkauf_data = supabase.table("einkaufsliste").select("*").eq("user_id", user_id).execute().data
 
@@ -109,7 +150,7 @@ if einkauf_data:
         supabase.table("einkaufsliste").delete().eq("user_id", user_id).execute()
         st.rerun()
 
-# --- SIDEBAR: FAVORITEN ---
+# --- SIDEBAR: FAVORITEN (Gefiltert nach eingeloggten User) ---
 st.sidebar.markdown("---")
 st.sidebar.title("⭐ Deine Favoriten")
 fav_data = supabase.table("favoriten").select("*").eq("user_id", user_id).execute().data
@@ -119,7 +160,6 @@ if fav_data:
         with st.sidebar.container():
             st.markdown(f"[{fav['rezept_name']}]({fav['url']})")
             
-            # Button, um die Zutaten des Favoriten direkt wieder auf die Einkaufsliste zu schieben
             if st.button("🛒 Zur Einkaufsliste", key=f"add_fav_list_{fav['id']}"):
                 zutaten_liste = fav.get('zutaten', [])
                 for zutat in zutaten_liste:
@@ -128,10 +168,9 @@ if fav_data:
                         "rezept_name": fav['rezept_name'],
                         "zutat": zutat
                     }).execute()
-                st.sidebar.success(f"'{fav['rezept_name']}' zur Einkaufsliste hinzugefügt!")
+                st.sidebar.success("Zur Einkaufsliste hinzugefügt!")
                 st.rerun()
                 
-            # Löschen-Button für Favoriten
             if st.button(f"🗑️ Löschen", key=f"del_{fav['id']}"):
                 supabase.table("favoriten").delete().eq("id", fav['id']).execute()
                 st.rerun()
