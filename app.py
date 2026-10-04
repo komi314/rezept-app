@@ -39,7 +39,7 @@ if not st.session_state.user:
             except Exception as e:
                 st.error(f"Fehler bei der Registrierung: {e}")
                 
-    st.stop("Bitte logge dich ein, um die App zu nutzen.")
+    st.stop()
 
 # Wenn eingeloggt, holen wir die echte User-ID von Supabase
 user_id = st.session_state.user.id
