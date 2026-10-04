@@ -16,11 +16,9 @@ if 'seen_recipes' not in st.session_state:
     st.session_state.seen_recipes = set()
 
 def fetch_random_mealdb_recipe(is_veg):
-    # Wir rufen die offizielle, ungesperrte Zufalls-API von TheMealDB auf
     url = "https://www.themealdb.com/api/json/v1/1/random.php"
     
     try:
-        # Bis zu 5 Versuche, falls ein vegetarischer Filter aktiv ist und zufällig Fleisch kommt
         for _ in range(5):
             response = requests.get(url)
             if response.status_code != 200:
@@ -36,11 +34,9 @@ def fetch_random_mealdb_recipe(is_veg):
             if not name or name in st.session_state.seen_recipes:
                 continue
                 
-            # Vegetarisch-Check über die Kategorie oder den Namen
             if is_veg and category.lower() in ["beef", "chicken", "pork", "goat", "lamb"]:
                 continue
                 
-            # Zutaten und Mengen sauber aus den 20 möglichen Feldern der API extrahieren
             zutaten = []
             for i in range(1, 21):
                 ingredient = meal.get(f"strIngredient{i}")
@@ -81,18 +77,21 @@ if 'current_recipe' in st.session_state and st.session_state.current_recipe:
                     "zutat": zutat
                 }).execute()
             st.success("Zutaten gespeichert!")
+            st.rerun()
             
     with col2:
         if st.button("❤️ Ich mag das!", key="save_fav"):
+            # Wichtig: Wir speichern jetzt direkt auch die Zutaten im JSON-Format in der Favoriten-Tabelle
             supabase.table("favoriten").insert({
                 "user_id": user_id,
                 "rezept_name": r["name"],
                 "url": r["url"],
-                "zutaten": r["zutaten"]
+                "zutaten": r["zutaten"] # Falls die Spalte in Supabase als JSON oder Text existiert
             }).execute()
-            st.success("Gespeichert!")
+            st.success("Zu Favoriten hinzugefügt!")
+            st.rerun()
 
-# --- SIDEBAR (Einkaufsliste & Favoriten unverändert) ---
+# --- SIDEBAR: EINKAUFSLISTE ---
 st.sidebar.title("🛒 Deine Einkaufsliste")
 einkauf_data = supabase.table("einkaufsliste").select("*").eq("user_id", user_id).execute().data
 
@@ -110,13 +109,30 @@ if einkauf_data:
         supabase.table("einkaufsliste").delete().eq("user_id", user_id).execute()
         st.rerun()
 
+# --- SIDEBAR: FAVORITEN ---
 st.sidebar.markdown("---")
 st.sidebar.title("⭐ Deine Favoriten")
 fav_data = supabase.table("favoriten").select("*").eq("user_id", user_id).execute().data
 
 if fav_data:
     for fav in fav_data:
-        st.sidebar.markdown(f"[{fav['rezept_name']}]({fav['url']})")
-        if st.sidebar.button(f"🗑️ Löschen {fav['rezept_name'][:10]}", key=f"del_{fav['id']}"):
-            supabase.table("favoriten").delete().eq("id", fav['id']).execute()
-            st.rerun()
+        with st.sidebar.container():
+            st.markdown(f"[{fav['rezept_name']}]({fav['url']})")
+            
+            # Button, um die Zutaten des Favoriten direkt wieder auf die Einkaufsliste zu schieben
+            if st.button("🛒 Zur Einkaufsliste", key=f"add_fav_list_{fav['id']}"):
+                zutaten_liste = fav.get('zutaten', [])
+                for zutat in zutaten_liste:
+                    supabase.table("einkaufsliste").insert({
+                        "user_id": user_id,
+                        "rezept_name": fav['rezept_name'],
+                        "zutat": zutat
+                    }).execute()
+                st.sidebar.success(f"'{fav['rezept_name']}' zur Einkaufsliste hinzugefügt!")
+                st.rerun()
+                
+            # Löschen-Button für Favoriten
+            if st.button(f"🗑️ Löschen", key=f"del_{fav['id']}"):
+                supabase.table("favoriten").delete().eq("id", fav['id']).execute()
+                st.rerun()
+            st.markdown("---")
